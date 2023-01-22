@@ -1,3 +1,6 @@
+// (C) Sebastian Aaltonen 2023
+// MIT License (see file: LICENSE)
+
 typedef unsigned char uint8;
 typedef unsigned int uint32;
 
