@@ -4,6 +4,69 @@
 typedef unsigned char uint8;
 typedef unsigned int uint32;
 
+namespace SmallFloat
+{
+    static constexpr uint32 MANTISSA_BITS = 3;
+    static constexpr uint32 MANTISSA_MASK = 0x7;
+    static constexpr uint32 MANTISSA_VALUE = 1 << MANTISSA_BITS;
+
+    // Bin sizes follow floating point (exponent + mantissa) distribution (piecewise linear log approx)
+    // This ensures that for each size class, the average overhead percentage stays the same
+    uint32 uintToFloatRoundUp(uint32 size)
+    {
+        uint32 exp = 0;
+        uint32 mantissa = 0;
+
+        if (size < MANTISSA_VALUE)
+        {
+            // Denorm: 0..(MANTISSA_VALUE-1)
+            mantissa = size;
+        }
+        else
+        {
+            // Normalized: Hidden high bit always 1. Not stored. Just like float.
+            uint32 leadingZeros = __builtin_clz(size);
+            uint32 highestSetBit = 31 - leadingZeros;
+            
+            uint32 mantissaStartBit = highestSetBit - MANTISSA_BITS;
+            exp = mantissaStartBit;
+            mantissa = (size >> mantissaStartBit) & MANTISSA_MASK;
+            
+            uint32 lowBitsMask = (1 << mantissaStartBit) - 1;
+
+            // Round up!
+            if (lowBitsMask != 0)
+                mantissa++;
+        }
+        
+        return (exp << MANTISSA_BITS) + mantissa; // + allows mantissa->exp overflow for round up
+    }
+    
+    uint32 uintToFloatRoundDown(uint32 size)
+    {
+        uint32 exp = 0;
+        uint32 mantissa = 0;
+
+        if (size < MANTISSA_VALUE)
+        {
+            // Denorm: 0..(MANTISSA_VALUE-1)
+            mantissa = size;
+        }
+        else
+        {
+            // Normalized: Hidden high bit always 1. Not stored. Just like float.
+            uint32 leadingZeros = __builtin_clz(size);
+            uint32 highestSetBit = 31 - leadingZeros;
+            
+            uint32 mantissaStartBit = highestSetBit - MANTISSA_BITS;
+            exp = mantissaStartBit;
+            mantissa = (size >> mantissaStartBit) & MANTISSA_MASK;
+        }
+        
+        return (exp << MANTISSA_BITS) | mantissa;
+    }
+}
+
 class OffsetAllocator
 {
 public:
@@ -51,7 +114,7 @@ public:
     {
         // Round up to bin index to ensure that alloc >= bin
         // Gives us min bin index that fits the size
-        uint32 minBinIndex = sizeToFloatBinIndexRoundUp(size);
+        uint32 minBinIndex = SmallFloat::uintToFloatRoundUp(size);
 
         uint32 minTopBinIndex = minBinIndex >> TOP_BINS_INDEX_SHIFT;
         uint32 minLeafBinIndex = minBinIndex & LEAF_BINS_INDEX_MASK;
@@ -133,62 +196,6 @@ private:
         bool used = false; // TODO: Merge as bit flag
     };
 
-    // Bin sizes follow floating point (exponent + mantissa) distribution (piecewise linear log approx)
-    // This ensures that for each size class, the average overhead percentage stays the same
-    uint32 sizeToFloatBinIndexRoundUp(uint32 size)
-    {
-        uint32 exp = 0;
-        uint32 mantissa = 0;
-
-        if (size < BINS_PER_LEAF)
-        {
-            // Denorm: 0..(BINS_PER_LEAF-1)
-            mantissa = size;
-        }
-        else
-        {
-            // Normalized: Hidden high bit always 1. Not stored. Just like float.
-            uint32 leadingZeros = __builtin_clz(size);
-            uint32 highestSetBit = 31 - leadingZeros;
-            
-            uint32 mantissaStartBit = highestSetBit - TOP_BINS_INDEX_SHIFT;
-            exp = mantissaStartBit;
-            mantissa = (size >> mantissaStartBit) & LEAF_BINS_INDEX_MASK;
-            
-            uint32 lowBitsMask = (1 << mantissaStartBit) - 1;
-
-            // Round up!
-            if (lowBitsMask != 0)
-                mantissa++;
-        }
-        
-        return (exp << TOP_BINS_INDEX_SHIFT) + mantissa; // + allows mantissa->exp overflow for round up
-    }
-    
-    uint32 sizeToFloatBinIndexRoundDown(uint32 size)
-    {
-        uint32 exp = 0;
-        uint32 mantissa = 0;
-
-        if (size < BINS_PER_LEAF)
-        {
-            // Denorm: 0..(BINS_PER_LEAF-1)
-            mantissa = size;
-        }
-        else
-        {
-            // Normalized: Hidden high bit always 1. Not stored. Just like float.
-            uint32 leadingZeros = __builtin_clz(size);
-            uint32 highestSetBit = 31 - leadingZeros;
-            
-            uint32 mantissaStartBit = highestSetBit - TOP_BINS_INDEX_SHIFT;
-            exp = mantissaStartBit;
-            mantissa = (size >> mantissaStartBit) & LEAF_BINS_INDEX_MASK;
-        }
-        
-        return (exp << TOP_BINS_INDEX_SHIFT) | mantissa;
-    }
-    
     uint32 findLowestSetBitAfter(uint32 bitMask, uint32 startBitIndex)
     {
         uint32 maskBeforeStartIndex = (1 << startBitIndex) - 1;
@@ -200,7 +207,7 @@ private:
     uint32 insertNodeIntoBin(uint32 size, uint32 dataOffset)
     {
         // Round down to bin index to ensure that bin >= alloc
-        uint32 binIndex = sizeToFloatBinIndexRoundDown(size);
+        uint32 binIndex = SmallFloat::uintToFloatRoundDown(size);
         
         uint32 topBinIndex = binIndex >> TOP_BINS_INDEX_SHIFT;
         uint32 leafBinIndex = binIndex & LEAF_BINS_INDEX_MASK;
@@ -237,7 +244,7 @@ private:
             // Hard case: We are the first node in a bin. Find the bin.
             
             // Round down to bin index to ensure that bin >= alloc
-            uint32 binIndex = sizeToFloatBinIndexRoundDown(node.dataSize);
+            uint32 binIndex = SmallFloat::uintToFloatRoundDown(node.dataSize);
             
             uint32 topBinIndex = binIndex >> TOP_BINS_INDEX_SHIFT;
             uint32 leafBinIndex = binIndex & LEAF_BINS_INDEX_MASK;
