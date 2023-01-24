@@ -7,8 +7,8 @@ typedef unsigned int uint32;
 namespace SmallFloat
 {
     static constexpr uint32 MANTISSA_BITS = 3;
-    static constexpr uint32 MANTISSA_MASK = 0x7;
     static constexpr uint32 MANTISSA_VALUE = 1 << MANTISSA_BITS;
+    static constexpr uint32 MANTISSA_MASK = MANTISSA_VALUE - 1;
 
     // Bin sizes follow floating point (exponent + mantissa) distribution (piecewise linear log approx)
     // This ensures that for each size class, the average overhead percentage stays the same
@@ -171,11 +171,11 @@ public:
         if (node.neighborNext != Node::unused && m_nodes[node.neighborNext].used == false)
         {
             // Next (contiguous) free node: Offset remains the same. Sum sizes.
-            Node& nextNode = m_nodes[node.neighborPrev];
+            Node& nextNode = m_nodes[node.neighborNext];
             size += nextNode.dataSize;
 
             // Remove node from the bin linked list and put it in the freelist
-            removeNodeFromBin(node.neighborPrev);
+            removeNodeFromBin(node.neighborNext);
         }
 
         // Insert the (combined) free node to bin
@@ -224,7 +224,7 @@ private:
         uint32 topNodeIndex = m_binIndices[binIndex];
         uint32 nodeIndex = m_freeNodes[m_freeOffset--];
         m_nodes[nodeIndex] = { .dataOffset = dataOffset, .dataSize = size, .binListNext = topNodeIndex };
-        m_nodes[topNodeIndex].binListPrev = nodeIndex;
+        if (topNodeIndex != Node::unused) m_nodes[topNodeIndex].binListPrev = nodeIndex;
         m_binIndices[binIndex] = nodeIndex;
         
         return nodeIndex;
@@ -234,7 +234,7 @@ private:
     {
         Node &node = m_nodes[nodeIndex];
         
-        if (node.binListPrev)
+        if (node.binListPrev != Node::unused)
         {
             // Easy case: We have previous node. Set prev.next = node.next.
             m_nodes[node.binListPrev].binListNext = node.binListNext;
