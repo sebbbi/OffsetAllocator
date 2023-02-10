@@ -5,6 +5,9 @@ Uses 256 bins with (3 bit mantissa + 5 bit exponent) floating point distribution
 
 The allocation metadata is stored in a separate data structure, making this allocator suitable for sub-allocating any resources, such as GPU heaps, buffers and arrays. Returns an offset to the first element of the allocated contiguous range.
 
+## Integration
+CMakeLists.txt exists for cmake folder include. Alternatively, just copy the OffsetAllocator.cpp and OffsetAllocator.hpp in your project. No other files are needed.
+
 ## Disclaimer
 Early one weekend prototype. Unit tests are green, but coverage is still not 100%. Use at your own risk!
 
