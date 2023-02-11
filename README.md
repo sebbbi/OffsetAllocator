@@ -8,6 +8,26 @@ The allocation metadata is stored in a separate data structure, making this allo
 ## Integration
 CMakeLists.txt exists for cmake folder include. Alternatively, just copy the OffsetAllocator.cpp and OffsetAllocator.hpp in your project. No other files are needed.
 
+# How to use
+
+```
+#include "offsetAllocator.hpp"
+using namespace OffsetAllocator;
+
+Allocator allocator(12345);                 // Allocator with 12345 contiguous elements in total
+
+Allocation a = allocator.allocate(1337);    // Allocate a 1337 element contiguous range
+uint32 offset_a = a.offset;                 // Provides offset to the first element of the range
+do_something(offset_a);
+
+Allocation b = allocator.allocate(123);     // Allocate a 123 element contiguous range
+uint32 offset_b = b.offset;                 // Provides offset to the first element of the range
+do_something(offset_b);
+
+allocator.free(a);                          // Free allocation a
+allocator.free(b);                          // Free allocation b
+```
+
 ## References
 This allocator is similar to the two-level segregated fit (TLSF) algorithm. 
 
