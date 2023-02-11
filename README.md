@@ -8,6 +8,12 @@ The allocation metadata is stored in a separate data structure, making this allo
 ## Integration
 CMakeLists.txt exists for cmake folder include. Alternatively, just copy the OffsetAllocator.cpp and OffsetAllocator.hpp in your project. No other files are needed.
 
+## References
+This allocator is similar to the two-level segregated fit (TLSF) algorithm. 
+
+**Comparison paper shows that TLSF algorithm provides best in class performance and fragmentation:**
+https://www.researchgate.net/profile/Alfons-Crespo/publication/234785757_A_comparison_of_memory_allocators_for_real-time_applications/links/5421d8550cf2a39f4af765f4/A-comparison-of-memory-allocators-for-real-time-applications.pdf
+
 ## Disclaimer
 Early one weekend prototype. Unit tests are green, but coverage is still not 100%. Use at your own risk!
 
