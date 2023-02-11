@@ -3,6 +3,14 @@
 
 #include "offsetAllocator.hpp"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#pragma intrinsic(_BitScanForward)
+#pragma intrinsic(_BitScanReverse)
+#elif defined(__clang__) || defined(__GNUC__)
+#include <x86intrin.h>
+#endif
+
 #ifdef DEBUG
 #include <assert.h>
 #define ASSERT(x) assert(x)
@@ -17,6 +25,43 @@
 
 namespace OffsetAllocator
 {
+    uint32 getHighestSetBit(uint32 n)
+    {
+#if defined(_MSC_VER)
+        unsigned long idx;
+        uint8 nonZero = _BitScanReverse(&idx, n);
+        return nonZero ? (uint32)idx : 32;
+#elif defined(__clang__) || defined(__GNUC__)
+        return 31 - __builtin_clz(n);
+#else
+        int x = 0;
+        if(n <= 0x0000FFFF) { x += 16; n <<= 16; }
+        if(n <= 0x00FFFFFF) { x +=  8; n <<=  8; }
+        if(n <= 0x0FFFFFFF) { x +=  4; n <<=  4; }
+        if(n <= 0x3FFFFFFF) { x +=  2; n <<=  2; }
+        if(n <= 0x7FFFFFFF) { x +=  1;           }
+        return 31 - x;
+#endif
+    }
+
+    uint32 getLowestSetBit(uint32 n)
+    {
+#if defined(_MSC_VER)
+        unsigned long idx;
+        uint8 nonZero = _BitScanForward(&idx, n);
+        return nonZero ? (uint32)idx : 32;
+#elif defined(__clang__) || defined(__GNUC__)
+        return __builtin_ctz(n);
+#else
+        int x = 0;
+        if((n & 0x0000FFFF) == 0) { x += 16; n >>= 16; }
+        if((n & 0x000000FF) == 0) { x +=  8; n >>=  8; }
+        if((n & 0x0000000F) == 0) { x +=  4; n >>=  4; }
+        if((n & 0x00000003) == 0) { x +=  2; n >>=  2; }
+        return (x - (n & 1)) + 1;
+#endif
+    }
+
     namespace SmallFloat
     {
         static constexpr uint32 MANTISSA_BITS = 3;
@@ -38,8 +83,7 @@ namespace OffsetAllocator
             else
             {
                 // Normalized: Hidden high bit always 1. Not stored. Just like float.
-                uint32 leadingZeros = __builtin_clz(size);
-                uint32 highestSetBit = 31 - leadingZeros;
+                uint32 highestSetBit = getHighestSetBit(size);
                 
                 uint32 mantissaStartBit = highestSetBit - MANTISSA_BITS;
                 exp = mantissaStartBit + 1;
@@ -68,8 +112,7 @@ namespace OffsetAllocator
             else
             {
                 // Normalized: Hidden high bit always 1. Not stored. Just like float.
-                uint32 leadingZeros = __builtin_clz(size);
-                uint32 highestSetBit = 31 - leadingZeros;
+                uint32 highestSetBit = getHighestSetBit(size);
                 
                 uint32 mantissaStartBit = highestSetBit - MANTISSA_BITS;
                 exp = mantissaStartBit + 1;
@@ -109,7 +152,7 @@ namespace OffsetAllocator
         uint32 maskAfterStartIndex = ~maskBeforeStartIndex;
         uint32 bitsAfter = bitMask & maskAfterStartIndex;
         if (bitsAfter == 0) return Allocation::NO_SPACE;
-        return __builtin_ctz(bitsAfter);
+        return getLowestSetBit(bitsAfter);
     }
 
     // Allocator
