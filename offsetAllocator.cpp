@@ -78,9 +78,24 @@ namespace OffsetAllocator
             
             return (exp << MANTISSA_BITS) | mantissa;
         }
+    
+        uint32 floatToUint(uint32 floatValue)
+        {
+            uint32 exponent = floatValue >> MANTISSA_BITS;
+            uint32 mantissa = floatValue & MANTISSA_MASK;
+            if (exponent == 0)
+            {
+                // Denorms
+                return mantissa;
+            }
+            else
+            {
+                return (mantissa | MANTISSA_VALUE) << (exponent - 1);
+            }
+        }
     }
       
-    Allocator::Allocator(uint32 size, uint32 maxAllocs) : m_usedBinsTop(0), m_freeOffset(maxAllocs - 1)
+    Allocator::Allocator(uint32 size, uint32 maxAllocs) : m_size(size), m_freeStorage(0), m_usedBinsTop(0), m_freeOffset(maxAllocs - 1)
     {
         for (uint32 i = 0 ; i < NUM_TOP_BINS; i++)
             m_usedBins[i] = 0;
@@ -97,7 +112,7 @@ namespace OffsetAllocator
             m_freeNodes[i] = maxAllocs - i - 1;
         }
         
-        // Start state: Whole memory as one big node
+        // Start state: Whole storage as one big node
         // Algorithm will split remainders and push them back as smaller nodes
         insertNodeIntoBin(size, 0);
     }
@@ -115,6 +130,11 @@ namespace OffsetAllocator
     // Allocator
     Allocator::~Allocator()
     {
+        // Leaks?
+        StorageReport report = storageReport();
+        ASSERT(report.totalFreeSpace == m_size);
+        ASSERT(report.largestFreeRegion == m_size);
+        
         delete[] m_nodes;
         delete[] m_freeNodes;
     }
@@ -158,7 +178,11 @@ namespace OffsetAllocator
         node.used = true;
         m_binIndices[binIndex] = node.binListNext;
         if (node.binListNext != Node::unused) m_nodes[node.binListNext].binListPrev = Node::unused;
-        
+        m_freeStorage -= nodeTotalSize;
+#ifdef DEBUG_VERBOSE
+        printf("Free storage: %u (-%u) (allocate)\n", m_freeStorage, nodeTotalSize);
+#endif
+
         // Bin empty?
         if (m_binIndices[binIndex] == Node::unused)
         {
@@ -179,7 +203,7 @@ namespace OffsetAllocator
         {
             uint32 newNodeIndex = insertNodeIntoBin(reminderSize, node.dataOffset + size);
             
-            // Link nodes next to each other in memory so that we can merge them later if both are free
+            // Link nodes next to each other so that we can merge them later if both are free
             // And update the old next neighbor to point to the new node (in middle)
             if (node.neighborNext != Node::unused) m_nodes[node.neighborNext].neighborPrev = newNodeIndex;
             m_nodes[newNodeIndex].neighborPrev = nodeIndex;
@@ -233,7 +257,7 @@ namespace OffsetAllocator
         
         // Insert the removed node to freelist
 #ifdef DEBUG_VERBOSE
-        printf("Putting node %d into freelist[%d] (free)\n", nodeIndex, m_freeOffset + 1);
+        printf("Putting node %u into freelist[%u] (free)\n", nodeIndex, m_freeOffset + 1);
 #endif
         m_freeNodes[++m_freeOffset] = nodeIndex;
 
@@ -273,12 +297,17 @@ namespace OffsetAllocator
         uint32 topNodeIndex = m_binIndices[binIndex];
         uint32 nodeIndex = m_freeNodes[m_freeOffset--];
 #ifdef DEBUG_VERBOSE
-        printf("Getting node %d from freelist[%d]\n", nodeIndex, m_freeOffset + 1);
+        printf("Getting node %u from freelist[%u]\n", nodeIndex, m_freeOffset + 1);
 #endif
         m_nodes[nodeIndex] = {.dataOffset = dataOffset, .dataSize = size, .binListNext = topNodeIndex};
         if (topNodeIndex != Node::unused) m_nodes[topNodeIndex].binListPrev = nodeIndex;
         m_binIndices[binIndex] = nodeIndex;
         
+        m_freeStorage += size;
+#ifdef DEBUG_VERBOSE
+        printf("Free storage: %u (+%u) (insertNodeIntoBin)\n", m_freeStorage, size);
+#endif
+
         return nodeIndex;
     }
     
@@ -322,8 +351,33 @@ namespace OffsetAllocator
         
         // Insert the node to freelist
 #ifdef DEBUG_VERBOSE
-        printf("Putting node %d into freelist[%d] (removeNodeFromBin)\n", nodeIndex, m_freeOffset + 1);
+        printf("Putting node %u into freelist[%u] (removeNodeFromBin)\n", nodeIndex, m_freeOffset + 1);
 #endif
         m_freeNodes[++m_freeOffset] = nodeIndex;
+
+        m_freeStorage -= node.dataSize;
+#ifdef DEBUG_VERBOSE
+        printf("Free storage: %u (-%u) (removeNodeFromBin)\n", m_freeStorage, node.dataSize);
+#endif
+    }
+
+    StorageReport Allocator::storageReport() const
+    {
+        uint32 largestFreeRegion = 0;
+        if (m_usedBinsTop)
+        {
+            uint32 topBinIndex = 31 - __builtin_clz(m_usedBinsTop);
+            uint32 leafBinIndex = 31 - __builtin_clz(m_usedBins[topBinIndex]);
+            largestFreeRegion = SmallFloat::floatToUint((topBinIndex << TOP_BINS_INDEX_SHIFT) | leafBinIndex);
+        }
+        
+        return {.totalFreeSpace = m_freeStorage, .largestFreeRegion = largestFreeRegion};
+    }
+
+    StorageReportFull Allocator::storageReportFull() const
+    {
+        // TODO: Implement
+        StorageReportFull report;
+        return report;
     }
 }

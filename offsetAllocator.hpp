@@ -6,6 +6,12 @@ namespace OffsetAllocator
     typedef unsigned char uint8;
     typedef unsigned int uint32;
 
+    static constexpr uint32 NUM_TOP_BINS = 32;
+    static constexpr uint32 BINS_PER_LEAF = 8;
+    static constexpr uint32 TOP_BINS_INDEX_SHIFT = 3;
+    static constexpr uint32 LEAF_BINS_INDEX_MASK = 0x7;
+    static constexpr uint32 NUM_LEAF_BINS = NUM_TOP_BINS * BINS_PER_LEAF;
+
     struct Allocation
     {
         static constexpr uint32 NO_SPACE = 0xffffffff;
@@ -14,20 +20,34 @@ namespace OffsetAllocator
         uint32 metadata; // internal: node index
     };
 
+    struct StorageReport
+    {
+        uint32 totalFreeSpace;
+        uint32 largestFreeRegion;
+    };
+
+    struct StorageReportFull
+    {
+        struct Region
+        {
+            uint32 size;
+            uint32 count;
+        };
+        
+        uint32 freeRegions[NUM_LEAF_BINS];
+    };
+
     class Allocator
     {
     public:
-        static constexpr uint32 NUM_TOP_BINS = 32;
-        static constexpr uint32 BINS_PER_LEAF = 8;
-        static constexpr uint32 TOP_BINS_INDEX_SHIFT = 3;
-        static constexpr uint32 LEAF_BINS_INDEX_MASK = 0x7;
-        static constexpr uint32 NUM_LEAF_BINS = NUM_TOP_BINS * BINS_PER_LEAF;
-        
         Allocator(uint32 size, uint32 maxAllocs = 128 * 1024);
         ~Allocator();
         
         Allocation allocate(uint32 size);
         void free(Allocation allocation);
+        
+        StorageReport storageReport() const;
+        StorageReportFull storageReportFull() const;
         
     private:
         uint32 insertNodeIntoBin(uint32 size, uint32 dataOffset);
@@ -45,11 +65,14 @@ namespace OffsetAllocator
             uint32 neighborNext = unused;
             bool used = false; // TODO: Merge as bit flag
         };
-        
+    
+        uint32 m_size;
+        uint32 m_freeStorage;
+
         uint32 m_usedBinsTop;
         uint8 m_usedBins[NUM_TOP_BINS];
         uint32 m_binIndices[NUM_LEAF_BINS];
-        
+                
         Node* m_nodes;
         uint32* m_freeNodes;
         uint32 m_freeOffset;
