@@ -8,7 +8,7 @@ The allocation metadata is stored in a separate data structure, making this allo
 ## Integration
 CMakeLists.txt exists for cmake folder include. Alternatively, just copy the OffsetAllocator.cpp and OffsetAllocator.hpp in your project. No other files are needed.
 
-# How to use
+## How to use
 
 ```
 #include "offsetAllocator.hpp"
