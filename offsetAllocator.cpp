@@ -115,8 +115,8 @@ namespace OffsetAllocator
     // Allocator
     Allocator::~Allocator()
     {
-        delete m_nodes;
-        delete m_freeNodes;
+        delete[] m_nodes;
+        delete[] m_freeNodes;
     }
     
     Allocation Allocator::allocate(uint32 size)
