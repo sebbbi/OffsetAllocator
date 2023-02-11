@@ -5,7 +5,7 @@ Uses 256 bins with 8 bit floating point distribution (3 bit mantissa + 5 bit exp
 
 The allocation metadata is stored in a separate data structure, making this allocator suitable for sub-allocating any resources, such as GPU heaps, buffers and arrays. Returns an offset to the first element of the allocated contiguous range.
 
-**Bin sizes:**
+**Bin size table:**
 ```
 0->0 1->1 2->2 3->3 4->4 5->5 6->6 7->7 
 8->8 9->9 10->10 11->11 12->12 13->13 14->14 15->15 
