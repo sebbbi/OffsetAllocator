@@ -6,7 +6,7 @@
 #ifdef DEBUG
 #include <assert.h>
 #define ASSERT(x) assert(x)
-#define DEBUG_VERBOSE
+//#define DEBUG_VERBOSE
 #else
 #define ASSERT(x)
 #endif
