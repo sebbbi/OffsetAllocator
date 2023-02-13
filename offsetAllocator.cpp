@@ -15,14 +15,40 @@
 #include <stdio.h>
 #endif
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 namespace OffsetAllocator
 {
+    inline uint32 lzcnt(uint32 v)
+    {
+#ifdef _MSC_VER
+        unsigned long retVal;
+        unsigned char isNonZero = _BitScanReverse(&retVal, v);
+        return isNonZero ? retVal : 0;
+#else
+        return __builtin_clz(v);
+#endif
+    }
+
+    inline uint32 tzcnt(uint32 v)
+    {
+#ifdef _MSC_VER
+        unsigned long retVal;
+        unsigned char isZero = _BitScanForward(&retVal, v);
+        return isNonZero ? retVal : 0;
+#else
+        return __builtin_ctz(v);
+#endif
+    }
+
     namespace SmallFloat
     {
         static constexpr uint32 MANTISSA_BITS = 3;
         static constexpr uint32 MANTISSA_VALUE = 1 << MANTISSA_BITS;
         static constexpr uint32 MANTISSA_MASK = MANTISSA_VALUE - 1;
-
+    
         // Bin sizes follow floating point (exponent + mantissa) distribution (piecewise linear log approx)
         // This ensures that for each size class, the average overhead percentage stays the same
         uint32 uintToFloatRoundUp(uint32 size)
@@ -38,7 +64,7 @@ namespace OffsetAllocator
             else
             {
                 // Normalized: Hidden high bit always 1. Not stored. Just like float.
-                uint32 leadingZeros = __builtin_clz(size);
+                uint32 leadingZeros = lzcnt(size);
                 uint32 highestSetBit = 31 - leadingZeros;
                 
                 uint32 mantissaStartBit = highestSetBit - MANTISSA_BITS;
@@ -68,7 +94,7 @@ namespace OffsetAllocator
             else
             {
                 // Normalized: Hidden high bit always 1. Not stored. Just like float.
-                uint32 leadingZeros = __builtin_clz(size);
+                uint32 leadingZeros = lzcnt(size);
                 uint32 highestSetBit = 31 - leadingZeros;
                 
                 uint32 mantissaStartBit = highestSetBit - MANTISSA_BITS;
@@ -124,7 +150,7 @@ namespace OffsetAllocator
         uint32 maskAfterStartIndex = ~maskBeforeStartIndex;
         uint32 bitsAfter = bitMask & maskAfterStartIndex;
         if (bitsAfter == 0) return Allocation::NO_SPACE;
-        return __builtin_ctz(bitsAfter);
+        return tzcnt(bitsAfter);
     }
 
     // Allocator
@@ -366,8 +392,8 @@ namespace OffsetAllocator
         uint32 largestFreeRegion = 0;
         if (m_usedBinsTop)
         {
-            uint32 topBinIndex = 31 - __builtin_clz(m_usedBinsTop);
-            uint32 leafBinIndex = 31 - __builtin_clz(m_usedBins[topBinIndex]);
+            uint32 topBinIndex = 31 - lzcnt(m_usedBinsTop);
+            uint32 leafBinIndex = 31 - lzcnt(m_usedBins[topBinIndex]);
             largestFreeRegion = SmallFloat::floatToUint((topBinIndex << TOP_BINS_INDEX_SHIFT) | leafBinIndex);
         }
         
