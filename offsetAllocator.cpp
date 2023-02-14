@@ -19,6 +19,8 @@
 #include <intrin.h>
 #endif
 
+#include <cstring>
+
 namespace OffsetAllocator
 {
     inline uint32 lzcnt(uint32 v)
@@ -120,29 +122,7 @@ namespace OffsetAllocator
             }
         }
     }
-      
-    Allocator::Allocator(uint32 size, uint32 maxAllocs) : m_size(size), m_freeStorage(0), m_usedBinsTop(0), m_freeOffset(maxAllocs - 1)
-    {
-        for (uint32 i = 0 ; i < NUM_TOP_BINS; i++)
-            m_usedBins[i] = 0;
-        
-        for (uint32 i = 0 ; i < NUM_LEAF_BINS; i++)
-            m_binIndices[i] = Node::unused;
-        
-        m_nodes = new Node[maxAllocs];
-        m_freeNodes = new uint32[maxAllocs];
-        
-        // Freelist is a stack. Nodes in inverse order so that [0] pops first.
-        for (uint32 i = 0; i < maxAllocs; i++)
-        {
-            m_freeNodes[i] = maxAllocs - i - 1;
-        }
-        
-        // Start state: Whole storage as one big node
-        // Algorithm will split remainders and push them back as smaller nodes
-        insertNodeIntoBin(size, 0);
-    }
-    
+
     // Utility functions
     uint32 findLowestSetBitAfter(uint32 bitMask, uint32 startBitIndex)
     {
@@ -153,20 +133,82 @@ namespace OffsetAllocator
         return tzcnt(bitsAfter);
     }
 
-    // Allocator
-    Allocator::~Allocator()
+    // Allocator...
+    Allocator::Allocator(uint32 size, uint32 maxAllocs) :
+        m_size(size),
+        m_maxAllocs(maxAllocs),
+        m_nodes(nullptr),
+        m_freeNodes(nullptr)
     {
-        // Leaks?
-        StorageReport report = storageReport();
-        ASSERT(report.totalFreeSpace == m_size);
-        ASSERT(report.largestFreeRegion == m_size);
+        if (sizeof(NodeIndex) == 2)
+        {
+            ASSERT(maxAllocs <= 65536);
+        }
+        reset();
+    }
+
+    Allocator::Allocator(Allocator &&other) :
+        m_size(other.m_size),
+        m_maxAllocs(other.m_maxAllocs),
+        m_freeStorage(other.m_freeStorage),
+        m_usedBinsTop(other.m_usedBinsTop),
+        m_nodes(other.m_nodes),
+        m_freeNodes(other.m_freeNodes),
+        m_freeOffset(other.m_freeOffset)
+    {
+        memcpy(m_usedBins, other.m_usedBins, sizeof(uint8) * NUM_TOP_BINS);
+        memcpy(m_binIndices, other.m_binIndices, sizeof(NodeIndex) * NUM_LEAF_BINS);
+
+        other.m_nodes = nullptr;
+        other.m_freeNodes = nullptr;
+        other.m_freeOffset = 0;
+        other.m_maxAllocs = 0;
+        other.m_usedBinsTop = 0;
+    }
+
+    void Allocator::reset()
+    {
+        m_freeStorage = 0;
+        m_usedBinsTop = 0;
+        m_freeOffset = m_maxAllocs - 1;
+
+        for (uint32 i = 0 ; i < NUM_TOP_BINS; i++)
+            m_usedBins[i] = 0;
         
+        for (uint32 i = 0 ; i < NUM_LEAF_BINS; i++)
+            m_binIndices[i] = Node::unused;
+        
+        if (m_nodes) delete[] m_nodes;
+        if (m_freeNodes) delete[] m_freeNodes;
+
+        m_nodes = new Node[m_maxAllocs];
+        m_freeNodes = new NodeIndex[m_maxAllocs];
+        
+        // Freelist is a stack. Nodes in inverse order so that [0] pops first.
+        for (uint32 i = 0; i < m_maxAllocs; i++)
+        {
+            m_freeNodes[i] = m_maxAllocs - i - 1;
+        }
+        
+        // Start state: Whole storage as one big node
+        // Algorithm will split remainders and push them back as smaller nodes
+        insertNodeIntoBin(m_size, 0);
+    }
+
+    Allocator::~Allocator()
+    {        
         delete[] m_nodes;
         delete[] m_freeNodes;
     }
     
     Allocation Allocator::allocate(uint32 size)
     {
+        // Out of allocations?
+        if (m_freeOffset == 0)
+        {
+            return {.offset = Allocation::NO_SPACE, .metadata = Allocation::NO_SPACE};
+        }
+        
         // Round up to bin index to ensure that alloc >= bin
         // Gives us min bin index that fits the size
         uint32 minBinIndex = SmallFloat::uintToFloatRoundUp(size);
@@ -174,26 +216,31 @@ namespace OffsetAllocator
         uint32 minTopBinIndex = minBinIndex >> TOP_BINS_INDEX_SHIFT;
         uint32 minLeafBinIndex = minBinIndex & LEAF_BINS_INDEX_MASK;
         
-        uint32 topBinIndex = findLowestSetBitAfter(m_usedBinsTop, minTopBinIndex);
-        
-        // Out of space?
-        if (topBinIndex == Allocation::NO_SPACE)
+        uint32 topBinIndex = minTopBinIndex;
+        uint32 leafBinIndex = Allocation::NO_SPACE;
+
+        // If top bin exists, scan its leaf bin. This can fail (NO_SPACE).
+        if (m_usedBinsTop & (1 << topBinIndex))
         {
-            return {.offset = Allocation::NO_SPACE, .metadata = Allocation::NO_SPACE};
+            leafBinIndex = findLowestSetBitAfter(m_usedBins[topBinIndex], minLeafBinIndex);
         }
-        
-        // If the MSB bin is rounded up, zero LSB min bin requirement (larger MSB is enough as floats are monotonically increasing)
-        if (minTopBinIndex != topBinIndex)
-            minLeafBinIndex = 0;
-        
-        uint32 leafBinIndex = findLowestSetBitAfter(m_usedBins[topBinIndex], minLeafBinIndex);
-        
-        // Out of space?
+    
+        // If we didn't find space in top bin, we search top bin from +1
         if (leafBinIndex == Allocation::NO_SPACE)
         {
-            return {.offset = Allocation::NO_SPACE, .metadata = Allocation::NO_SPACE};
-        }
+            topBinIndex = findLowestSetBitAfter(m_usedBinsTop, minTopBinIndex + 1);
+            
+            // Out of space?
+            if (topBinIndex == Allocation::NO_SPACE)
+            {
+                return {.offset = Allocation::NO_SPACE, .metadata = Allocation::NO_SPACE};
+            }
 
+            // All leaf bins here fit the alloc, since the top bin was rounded up. Start leaf search from bit 0.
+            // NOTE: This search can't fail since at least one leaf bit was set because the top bit was set.
+            leafBinIndex = tzcnt(m_usedBins[topBinIndex]);
+        }
+                
         uint32 binIndex = (topBinIndex << TOP_BINS_INDEX_SHIFT) | leafBinIndex;
         
         // Pop the top node of the bin. Bin top = node.next.
@@ -243,9 +290,13 @@ namespace OffsetAllocator
     void Allocator::free(Allocation allocation)
     {
         ASSERT(allocation.metadata != Allocation::NO_SPACE);
+        if (!m_nodes) return;
         
         uint32 nodeIndex = allocation.metadata;
         Node& node = m_nodes[nodeIndex];
+        
+        // Double delete check
+        ASSERT(node.used == true);
         
         // Merge with neighbors...
         uint32 offset = node.dataOffset;
@@ -387,17 +438,33 @@ namespace OffsetAllocator
 #endif
     }
 
+    uint32 Allocator::allocationSize(Allocation allocation) const
+    {
+        if (allocation.metadata == Allocation::NO_SPACE) return 0;
+        if (!m_nodes) return 0;
+        
+        return m_nodes[allocation.metadata].dataSize;
+    }
+
     StorageReport Allocator::storageReport() const
     {
         uint32 largestFreeRegion = 0;
-        if (m_usedBinsTop)
-        {
-            uint32 topBinIndex = 31 - lzcnt(m_usedBinsTop);
-            uint32 leafBinIndex = 31 - lzcnt(m_usedBins[topBinIndex]);
-            largestFreeRegion = SmallFloat::floatToUint((topBinIndex << TOP_BINS_INDEX_SHIFT) | leafBinIndex);
-        }
+        uint32 freeStorage = 0;
         
-        return {.totalFreeSpace = m_freeStorage, .largestFreeRegion = largestFreeRegion};
+        // Out of allocations? -> Zero free space
+        if (m_freeOffset > 0)
+        {
+            freeStorage = m_freeStorage;
+            if (m_usedBinsTop)
+            {
+                uint32 topBinIndex = 31 - lzcnt(m_usedBinsTop);
+                uint32 leafBinIndex = 31 - lzcnt(m_usedBins[topBinIndex]);
+                largestFreeRegion = SmallFloat::floatToUint((topBinIndex << TOP_BINS_INDEX_SHIFT) | leafBinIndex);
+                ASSERT(freeStorage >= largestFreeRegion);
+            }
+        }
+
+        return {.totalFreeSpace = freeStorage, .largestFreeRegion = largestFreeRegion};
     }
 
     StorageReportFull Allocator::storageReportFull() const
