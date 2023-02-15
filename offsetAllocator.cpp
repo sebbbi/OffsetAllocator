@@ -23,23 +23,23 @@
 
 namespace OffsetAllocator
 {
-    inline uint32 lzcnt(uint32 v)
+    inline uint32 lzcnt_nonzero(uint32 v)
     {
 #ifdef _MSC_VER
         unsigned long retVal;
-        unsigned char isNonZero = _BitScanReverse(&retVal, v);
-        return isNonZero ? retVal : 0;
+        _BitScanReverse(&retVal, v);
+        return 31 - retVal;
 #else
         return __builtin_clz(v);
 #endif
     }
 
-    inline uint32 tzcnt(uint32 v)
+    inline uint32 tzcnt_nonzero(uint32 v)
     {
 #ifdef _MSC_VER
         unsigned long retVal;
-        unsigned char isZero = _BitScanForward(&retVal, v);
-        return isNonZero ? retVal : 0;
+        _BitScanForward(&retVal, v);
+        return retVal;
 #else
         return __builtin_ctz(v);
 #endif
@@ -66,7 +66,7 @@ namespace OffsetAllocator
             else
             {
                 // Normalized: Hidden high bit always 1. Not stored. Just like float.
-                uint32 leadingZeros = lzcnt(size);
+                uint32 leadingZeros = lzcnt_nonzero(size);
                 uint32 highestSetBit = 31 - leadingZeros;
                 
                 uint32 mantissaStartBit = highestSetBit - MANTISSA_BITS;
@@ -96,7 +96,7 @@ namespace OffsetAllocator
             else
             {
                 // Normalized: Hidden high bit always 1. Not stored. Just like float.
-                uint32 leadingZeros = lzcnt(size);
+                uint32 leadingZeros = lzcnt_nonzero(size);
                 uint32 highestSetBit = 31 - leadingZeros;
                 
                 uint32 mantissaStartBit = highestSetBit - MANTISSA_BITS;
@@ -130,7 +130,7 @@ namespace OffsetAllocator
         uint32 maskAfterStartIndex = ~maskBeforeStartIndex;
         uint32 bitsAfter = bitMask & maskAfterStartIndex;
         if (bitsAfter == 0) return Allocation::NO_SPACE;
-        return tzcnt(bitsAfter);
+        return tzcnt_nonzero(bitsAfter);
     }
 
     // Allocator...
@@ -238,7 +238,7 @@ namespace OffsetAllocator
 
             // All leaf bins here fit the alloc, since the top bin was rounded up. Start leaf search from bit 0.
             // NOTE: This search can't fail since at least one leaf bit was set because the top bit was set.
-            leafBinIndex = tzcnt(m_usedBins[topBinIndex]);
+            leafBinIndex = tzcnt_nonzero(m_usedBins[topBinIndex]);
         }
                 
         uint32 binIndex = (topBinIndex << TOP_BINS_INDEX_SHIFT) | leafBinIndex;
@@ -457,8 +457,8 @@ namespace OffsetAllocator
             freeStorage = m_freeStorage;
             if (m_usedBinsTop)
             {
-                uint32 topBinIndex = 31 - lzcnt(m_usedBinsTop);
-                uint32 leafBinIndex = 31 - lzcnt(m_usedBins[topBinIndex]);
+                uint32 topBinIndex = 31 - lzcnt_nonzero(m_usedBinsTop);
+                uint32 leafBinIndex = 31 - lzcnt_nonzero(m_usedBins[topBinIndex]);
                 largestFreeRegion = SmallFloat::floatToUint((topBinIndex << TOP_BINS_INDEX_SHIFT) | leafBinIndex);
                 ASSERT(freeStorage >= largestFreeRegion);
             }
@@ -469,8 +469,18 @@ namespace OffsetAllocator
 
     StorageReportFull Allocator::storageReportFull() const
     {
-        // TODO: Implement
         StorageReportFull report;
+        for (uint32 i = 0; i < NUM_LEAF_BINS; i++)
+        {
+            uint32 count = 0;
+            uint32 nodeIndex = m_binIndices[i];
+            while (nodeIndex != Node::unused)
+            {
+                nodeIndex = m_nodes[nodeIndex].binListNext;
+                count++;
+            }
+            report.freeRegions[i] = { .size = SmallFloat::floatToUint(i), .count = count };
+        }
         return report;
     }
 }

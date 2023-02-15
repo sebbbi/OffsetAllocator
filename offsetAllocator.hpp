@@ -45,7 +45,7 @@ namespace OffsetAllocator
             uint32 count;
         };
         
-        uint32 freeRegions[NUM_LEAF_BINS];
+        Region freeRegions[NUM_LEAF_BINS];
     };
 
     class Allocator
