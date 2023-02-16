@@ -6,7 +6,7 @@
 namespace OffsetAllocator
 {
     typedef unsigned char uint8;
-    typedef unsigned int uint16;
+    typedef unsigned short uint16;
     typedef unsigned int uint32;
 
     // 16 bit offsets mode will halve the metadata storage cost
