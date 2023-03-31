@@ -51,9 +51,11 @@ namespace OffsetAllocator
     class Allocator
     {
     public:
+        Allocator();
         Allocator(uint32 size, uint32 maxAllocs = 128 * 1024);
         Allocator(Allocator &&other);
         ~Allocator();
+        void init(uint32 size, uint32 maxAllocs = 128 * 1024);
         void reset();
         
         Allocation allocate(uint32 size);
@@ -64,6 +66,7 @@ namespace OffsetAllocator
         StorageReportFull storageReportFull() const;
         
     private:
+        void initInternal();
         uint32 insertNodeIntoBin(uint32 size, uint32 dataOffset);
         void removeNodeFromBin(uint32 nodeIndex);
 

@@ -134,17 +134,20 @@ namespace OffsetAllocator
     }
 
     // Allocator...
-    Allocator::Allocator(uint32 size, uint32 maxAllocs) :
-        m_size(size),
-        m_maxAllocs(maxAllocs),
+    Allocator::Allocator() :
+        m_size(0),
+        m_maxAllocs(0),
         m_nodes(nullptr),
         m_freeNodes(nullptr)
     {
-        if (sizeof(NodeIndex) == 2)
-        {
-            ASSERT(maxAllocs <= 65536);
-        }
         reset();
+    }
+
+    Allocator::Allocator(uint32 size, uint32 maxAllocs) :
+        m_nodes(nullptr),
+        m_freeNodes(nullptr)
+    {       
+        init(size, maxAllocs);
     }
 
     Allocator::Allocator(Allocator &&other) :
@@ -166,6 +169,19 @@ namespace OffsetAllocator
         other.m_usedBinsTop = 0;
     }
 
+    void Allocator::init(uint32 size, uint32 maxAllocs)
+    {
+		if (sizeof(NodeIndex) == 2)
+		{
+			ASSERT(maxAllocs <= 65536);
+		}
+
+		m_size = size;
+		m_maxAllocs = maxAllocs;
+        reset();       
+        initInternal();
+    }
+
     void Allocator::reset()
     {
         m_freeStorage = 0;
@@ -180,7 +196,10 @@ namespace OffsetAllocator
         
         if (m_nodes) delete[] m_nodes;
         if (m_freeNodes) delete[] m_freeNodes;
+    }
 
+    void Allocator::initInternal()
+    {
         m_nodes = new Node[m_maxAllocs];
         m_freeNodes = new NodeIndex[m_maxAllocs];
         
