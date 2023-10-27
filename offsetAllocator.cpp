@@ -166,6 +166,25 @@ namespace OffsetAllocator
         other.m_usedBinsTop = 0;
     }
 
+    void Allocator::operator=(Allocator &&other) {
+        m_size = other.m_size;
+        m_maxAllocs = other.m_maxAllocs;
+        m_freeStorage = other.m_freeStorage;
+        m_usedBinsTop = other.m_usedBinsTop;
+        m_nodes = other.m_nodes;
+        m_freeNodes = other.m_freeNodes;
+        m_freeOffset = other.m_freeOffset;
+        
+        memcpy(m_usedBins, other.m_usedBins, sizeof(uint8) * NUM_TOP_BINS);
+        memcpy(m_binIndices, other.m_binIndices, sizeof(NodeIndex) * NUM_LEAF_BINS);
+
+        other.m_nodes = nullptr;
+        other.m_freeNodes = nullptr;
+        other.m_freeOffset = 0;
+        other.m_maxAllocs = 0;
+        other.m_usedBinsTop = 0;
+    }
+
     void Allocator::reset()
     {
         m_freeStorage = 0;
