@@ -53,8 +53,12 @@ namespace OffsetAllocator
     public:
         Allocator(uint32 size, uint32 maxAllocs = 128 * 1024);
         Allocator(Allocator &&other);
+        Allocator(const Allocator &other) = delete;
         ~Allocator();
         void reset();
+        
+        void operator=(const Allocator &other) = delete;
+        void operator=(Allocator &&other);
         
         Allocation allocate(uint32 size);
         void free(Allocation allocation);
