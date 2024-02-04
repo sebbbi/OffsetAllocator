@@ -8,4 +8,4 @@ set(SOURCE_FILES
 )
 
 add_library(${PROJECT_NAME} ${SOURCE_FILES})
-setup_target_libs(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PUBLIC .)
